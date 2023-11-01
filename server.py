@@ -1,7 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 import os
 import sys
@@ -17,9 +13,10 @@ from pysot.models.model_builder_adapn import ModelBuilderADAPN
 from pysot.tracker.adsiamapn_tracker import ADSiamAPNTracker
 from pysot.utils.model_load import load_pretrain
 from collections import deque
+from quatToEuler import quaternion_to_euler
+from bbox_calculations import bbox_to_string
 
 torch.set_num_threads(1)
-
 
 import time
 import UdpComms as U
@@ -66,86 +63,77 @@ detector = ObjectDetector()
 track_di = {}
 track_avg = {}
 
-import numpy as np
-def quaternion_to_euler(w, x, y, z):
-    ysqr = y * y
+# import numpy as np
+# def quaternion_to_euler(w, x, y, z):
+#     ysqr = y * y
 
-    t0 = +2.0 * (w * x + y * z)
-    t1 = +1.0 - 2.0 * (x * x + ysqr)
-    X = np.degrees(np.arctan2(t0, t1))
+#     t0 = +2.0 * (w * x + y * z)
+#     t1 = +1.0 - 2.0 * (x * x + ysqr)
+#     X = np.degrees(np.arctan2(t0, t1))
 
-    t2 = +2.0 * (w * y - z * x)
-    t2 = np.where(t2>+1.0,+1.0,t2)
-    #t2 = +1.0 if t2 > +1.0 else t2
+#     t2 = +2.0 * (w * y - z * x)
+#     t2 = np.where(t2>+1.0,+1.0,t2)
+#     #t2 = +1.0 if t2 > +1.0 else t2
 
-    t2 = np.where(t2<-1.0, -1.0, t2)
-    #t2 = -1.0 if t2 < -1.0 else t2
-    Y = np.degrees(np.arcsin(t2))
+#     t2 = np.where(t2<-1.0, -1.0, t2)
+#     #t2 = -1.0 if t2 < -1.0 else t2
+#     Y = np.degrees(np.arcsin(t2))
 
-    t3 = +2.0 * (w * z + x * y)
-    t4 = +1.0 - 2.0 * (ysqr + z * z)
-    Z = np.degrees(np.arctan2(t3, t4))
+#     t3 = +2.0 * (w * z + x * y)
+#     t4 = +1.0 - 2.0 * (ysqr + z * z)
+#     Z = np.degrees(np.arctan2(t3, t4))
 
-    return X, Y, Z
-
-database_url = "https://uavlab-98a0c-default-rtdb.firebaseio.com/"
-def post_data(data):
-    response = requests.post(database_url + "/location.json", json=data)
-    print(response.status_code)
+#     return X, Y, Z
 
 
-def bbox_intersection(boxA, boxB):
-    # Determine the coordinates of the intersection rectangle
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
+# def bbox_intersection(boxA, boxB):
+#     # Determine the coordinates of the intersection rectangle
+#     xA = max(boxA[0], boxB[0])
+#     yA = max(boxA[1], boxB[1])
+#     xB = min(boxA[2], boxB[2])
+#     yB = min(boxA[3], boxB[3])
 
-    # Compute the area of intersection
-    intersection_area = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+#     # Compute the area of intersection
+#     intersection_area = max(0, xB - xA + 1) * max(0, yB - yA + 1)
 
-    # Compute the area of each bounding box
-    boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-    boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+#     # Compute the area of each bounding box
+#     boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+#     boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
 
-    # Compute the IoU by taking the intersection area and dividing it
-    # by the sum of the two areas minus the intersection area
-    iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
-    # print(iou,'###########################################################')
-    return iou
+#     # Compute the IoU by taking the intersection area and dividing it
+#     # by the sum of the two areas minus the intersection area
+#     iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
+#     return iou
 
-def bbox_to_string(trk,float_list):
-    if trk == '':
-        temp_li = []
-        for li in float_list:
-            int_list = [int(x) for x in li]
-            st = '.'.join(map(str, int_list))
-            # st = st+'u'
-            temp_li.append(st)
-        return 'n'.join(temp_li)
-    else:
-        traced_boxes = trk.split('n')
+# def bbox_to_string(trk,float_list):
+#     if trk == '':
+#         temp_li = []
+#         for li in float_list:
+#             int_list = [int(x) for x in li]
+#             st = '.'.join(map(str, int_list))
+#             # st = st+'u'
+#             temp_li.append(st)
+#         return 'n'.join(temp_li)
+#     else:
+#         traced_boxes = trk.split('n')
 
-        temp_li = []
-        for li in float_list:
-            int_list = [int(x) for x in li]
-            check = True
-            for traced_b in traced_boxes:
-                traced_split = traced_b.split('.')
-                traced_box = [int(x) for x in traced_split]
+#         temp_li = []
+#         for li in float_list:
+#             int_list = [int(x) for x in li]
+#             check = True
+#             for traced_b in traced_boxes:
+#                 traced_split = traced_b.split('.')
+#                 traced_box = [int(x) for x in traced_split]
                 
-                if bbox_intersection(li,traced_box)>0.3:
-                    # print('overlapppppppppppp')
-                    check = False
-            if check:
-                st = '.'.join(map(str, int_list))
-                temp_li.append(st)
-        return 'n'.join(temp_li)
+#                 if bbox_intersection(li,traced_box)>0.3:
+#                     # print('overlapppppppppppp')
+#                     check = False
+#             if check:
+#                 st = '.'.join(map(str, int_list))
+#                 temp_li.append(st)
+#         return 'n'.join(temp_li)
 
 # start_time = time.time()
-
-# Tracker = False
-    
 
 def track(frame):
     if len(trackers) == 0:
@@ -155,9 +143,6 @@ def track(frame):
         for i in trackers:
 
             outputs = i.track(frame)
-            
-
-            # print(outputs['best_score'])
             track_di[i].append(outputs['best_score'])
             # print(track_di[i],'....................')
             bbox = list(map(int, outputs['bbox']))
@@ -171,7 +156,7 @@ def track(frame):
                 di["point"] = "start"
                 di["box"] = st
                 sock3.SendData(json.dumps(di).encode('utf-8'))
-                print(st,"Starting pointtttttttttttttttttttttt")
+                # print(st,"Starting pointtttttttttttttttttttttt")
             if len(track_di[i]) == 10:
                 track_di[i].popleft()
                 if sum(track_di[i])/10 <0.3:
@@ -182,7 +167,7 @@ def track(frame):
                     di["point"] = "last"
                     di["box"] = st
                     sock3.SendData(json.dumps(di).encode('utf-8'))
-                    print(st, "Last marked pointtttttttttttttttttttttt")
+                    # print(st, "Last marked pointtttttttttttttttttttttt")
         return 'n'.join(temp_li)
 
 
@@ -213,19 +198,15 @@ def LocationCalculator(dat):
 while True:
     ret,camImage = cam.read()
     height, width, _ = camImage.shape
-    # print(camImage.shape)
     frame = imutils.resize(camImage,width=400)
     encoded,buffer = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,80])
     byteString = base64.b64encode(buffer)
 
     frameBytes = buffer.tobytes()
     encoded_string= base64.b64encode(frameBytes)
-    # byteString = bytes(cv2.imencode('.jpg', buffer)[1].tostring())
-    # print('...',i)
+    
     # if(i==501):
     #     end_time = time.time()
-
-    #     # Calculate and print the elapsed time
     #     elapsed_time = end_time - start_time
     #     print(f"The program took {elapsed_time:.2f} seconds to run.")
     if(i>1):
@@ -234,7 +215,6 @@ while True:
             # 'image':'im',
         }
         di = df.iloc[i].to_dict()
-        # print(di)
         data['lat'] = di['drone/location/latitude']
         data['lon'] =di['drone/location/longitude']
         data['alt'] = di['drone/ground_distance']
@@ -249,25 +229,11 @@ while True:
         #Object Detection
 
         res = detector.predict(camImage)
-        # print(res[0].boxes)
         bbox_data = res[0].boxes.xyxy.cpu().numpy().tolist()
-        # for box in bbox_data:
-        # print(bbox_to_string(bbox_data))
-        
-        # data['bbox_data'] = "700.12.720.18"
-        # print(bbox_to_string(bbox_data))
-        # if Tracker == False:
-        #     tracker.init(frame, (1061, 273, 34, 64))
-        #     Tracker = True
         data['tracker'] = track(camImage)
         data['bbox_data'] = bbox_to_string(data['tracker'],bbox_data)
-        print(data['bbox_data'],'------------')
         data['tracker_status'] = '.'.join(['1' if value else '0' for value in tracker_active.values()])
-        # print(data['tracker_status'],'+++++++++++++')
-        # print('.'.join(['1' if value else '0' for value in tracker_active.values()]))
-        # print(data['roll'],data['pitch'],data['yaw'])
-        # print(di)
-      
+        
 
     
         sock.SendData(json.dumps(data).encode('utf-8')) # Send this string to other application
@@ -282,28 +248,6 @@ while True:
             dat = "{"+dat+"}"
             dat = json.loads(dat)
             if dat["track"] == "":
-                res = LocationCalculator(dat)
-                # c = GC.CameraRayProjection(69,[float(dat["lat"]),float(dat["lon"]),float(dat["alt"])],
-                #                         [int(float(dat["resw"])),int(float(dat["resh"]))],
-                #                         GC.Coordinates(int(float(dat["xpos"])),int(float(dat["ypos"]))),
-
-                #                         [data['w'],data['x'],data['y'],data['z']])
-                
-                # target_direction_ENU = c.target_ENU()
-                # target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
-                # intersect_ECEF = c.target_location(target_direction_ECEF)
-                
-                # intersect_LLA = c.ECEFtoLLA(intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
-                # print(c.LLAtoXYZ(intersect_LLA[0], intersect_LLA[1], intersect_LLA[2]))
-                # print("CALCULATED LOCATION IS",intersect_LLA)
-                
-                # di2 = {
-                #     'lat' : str(intersect_LLA[0]),
-                #     'lon' : str(intersect_LLA[1]),
-                #     'alt' : str(intersect_LLA[2]),
-                #     'obj' : str(dat["obj"]),
-                #     'ctr' : str(dat["ctr"])
-                # }
                 sock2.SendData(res)
 
             else:
@@ -315,16 +259,7 @@ while True:
                 tracker_active[temp_tracker] = True
                 track_di[temp_tracker] = deque(maxlen = 10)
                 trackers[-1].init(frame, (li[0],li[1], li[2]-li[0], li[3]-li[1]))
-                # tracker.init(frame, (li[0],li[1], li[2]-li[0], li[3]-li[1]))
-                # Tracker = True
-
-            # db_di ={
-            #      'lat' : float(str(intersect_LLA[0])),
-            #     'lon' : float(str(intersect_LLA[1])),
-            #     'obj' : int(dat["obj"]),
-            #     'ctr' : int(dat["ctr"])
-            # }
-            # post_data(db_di)
+                
 
     dat2 = sock2.ReadReceivedData() # read data
     #implement timer function
