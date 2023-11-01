@@ -18,8 +18,10 @@ While streaming, we are transmitting both frames and their associated metadata. 
     Add path in `__init__.py`
 
 4. Install YOLO for object detection. [link](https://docs.ultralytics.com/)
-5. We are using Siamese Network to track objects/people.[reference](https://github.com/vision4robotics/SiamAPN)
-6. 
+
+5. Install requirements for Siamese Tracker. ```pip install requirements_tracker.txt```
+6. We are using Siamese Network to track objects/people.[reference](https://github.com/vision4robotics/SiamAPN)
+7. 
     We used SiamAPN++. Pretrained model can be downloaded from [link](https://github.com/vision4robotics/SiamAPN#siamapn-1)
    
     Download the Pretrained model and rename it as SiamAPNPlusModel.pth.
