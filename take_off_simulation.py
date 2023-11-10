@@ -35,6 +35,8 @@ from olympe.messages.gimbal import (
 
 olympe.log.update_config({"loggers": {"olympe": {"level": "WARNING"}}})
 
+counter = 0
+interrupt = False
 DRONE_IP = os.environ.get("DRONE_IP", "10.202.0.1")
 # DRONE_IP = os.environ.get("DRONE_IP", "192.168.42.1")
 
@@ -121,6 +123,14 @@ class StreamingExample:
 
 
     def show_yuv_frame(self, yuv_frame):
+        global counter
+        global interrupt
+        counter +=1
+        # print(counter)
+        if counter == 500:
+            interrupt = True
+        if counter == 700:
+            interrupt = False
         # the VideoFrame.info() dictionary contains some useful information
         # such as the video resolution
         info = yuv_frame.info()
@@ -183,8 +193,15 @@ class StreamingExample:
             }
             sock2.SendData(json.dumps(di2).encode('utf-8'))
             
+    def check_hover(self):
+        global interrupt
+        print("In hoverrrrrrrrrrrrr")
+        while interrupt:
+            print("hoveringgggggggggg")
+            time.sleep(1)
 
     def fly(self):
+        global interrupt
         # print('Streamingggggggggggg')
         # time.sleep(680)
         # Takeoff, fly, land, ...
@@ -207,70 +224,33 @@ class StreamingExample:
         print(maxtilt)
         print(self.drone.get_state(SpeedChanged))
         self.drone(MaxTilt(maxtilt)).wait()
-        # self.drone(SpeedChanged(1,1,1)).wait()
         
         self.drone( set_target( gimbal_id = 0,
                                   control_mode = "position",
                                   yaw_frame_of_reference = "relative",
                                   yaw = 0.0,
                                   pitch_frame_of_reference = "relative",
-                                  pitch = -0.0,
+                                  pitch = -70.0,
                                   roll_frame_of_reference = "relative",
                                   roll = 0.0
                                 ) ).wait()
         print("ddddddddddddddddddddddddddddddd")
-        self.drone(moveBy(0, 0, -15, 0, _timeout=100)).wait().success()
-        for i in range(8):
-            self.drone(moveBy(0, 7, 0, 0, _timeout=100)).wait().success()
-            self.drone(moveBy(0, 0, 0, -0.785, _timeout=100)).wait().success()
-            self.drone(moveBy(0, 0, 3, 0, _timeout=100)).wait().success()
-            self.drone(moveBy(0, 0, -3, 0, _timeout=100)).wait().success()
-
-
-
-      
-
-
-        # self.drone(moveBy(15,0,0,0,_timeout=100)).wait().success()
-        # time.sleep(10)   
-        # self.drone(moveBy(-15,0,0,0,_timeout=100)).wait().success()            
-        # self.drone(moveBy(0,0,0,3.14,_timeout=10)).wait().success()
-        # self.drone(moveBy(5,0,0,0,_timeout=100)).wait().success()
-        # time.sleep(10)
-        # self.drone(moveBy(-5,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,0,1.57,_timeout=10)).wait().success()
-        # self.drone(moveBy(15,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,5,0,_timeout=100)).wait().success()
-        # time.sleep(10)
-        # self.drone(moveBy(0,0,-5,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(-15,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,0,1.57,_timeout=10)).wait().success()
-
-        # self.drone(moveBy(15,0,0,0,_timeout=100)).wait().success()
-        # time.sleep(10)   
-        # self.drone(moveBy(-15,0,0,0,_timeout=100)).wait().success()            
-        # self.drone(moveBy(0,0,0,3.14,_timeout=10)).wait().success()
-        # self.drone(moveBy(5,0,0,0,_timeout=100)).wait().success()
-        # time.sleep(10)
-        # self.drone(moveBy(-5,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,0,1.57,_timeout=10)).wait().success()
-        # self.drone(moveBy(15,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,5,0,_timeout=100)).wait().success()
-        # time.sleep(10)
-        # self.drone(moveBy(0,0,-5,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(-15,0,0,0,_timeout=100)).wait().success()
-        # self.drone(moveBy(0,0,0,1.57,_timeout=10)).wait().success()
-
-
-
-        self.drone(moveBy(0, 0, 15, 0, _timeout=10)).wait().success()
+        self.drone(moveBy(0, 0, -25, 0, _timeout=10)).wait().success()
+        for i in range(30):
+            self.check_hover()
+            self.drone(moveBy(1, 0, 0, 0, _timeout=1)).wait().success()
+            print(i)
+            print("-----------------")
+        for i in range(30):
+            self.check_hover()
+            self.drone(moveBy(-1, 0, 0, 0, _timeout=1)).wait().success()
+            print(i)
+            print('=================')
         
 
 
-
-        # for i in range(4):
-        #     print(f"Moving by ({i + 1}/4)...")
-        #     self.drone(moveBy(10, 0, 0, math.pi, _timeout=20)).wait().success()
+        self.drone(moveBy(0, 0, 25, 0, _timeout=10)).wait().success()
+        
 
         print("Landing...")
         self.drone(Landing() >> FlyingStateChanged(state="landed", _timeout=5)).wait()

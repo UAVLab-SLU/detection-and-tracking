@@ -2,6 +2,7 @@
 import os
 import sys
 sys.path.append('../')
+sys.path.append('../AerialReId')
 
 import argparse
 import cv2
@@ -15,6 +16,9 @@ from pysot.utils.model_load import load_pretrain
 from collections import deque
 from quatToEuler import quaternion_to_euler
 from bbox_calculations import bbox_to_string
+from extract_features import extractFeatures
+from ReId import check_match
+from PIL import Image
 
 torch.set_num_threads(1)
 
@@ -29,17 +33,21 @@ import pandas as pd
 import GeoCoordinationHandler as GC
 from object_detector import ObjectDetector
 import requests
+
+from shapely.geometry import Point
+import geopandas
+
 # Create UDP socket to use for sending (and receiving)
 sock = U.UdpComms(udpIP="127.0.0.1", portTX=8080, portRX=8081, enableRX=True, suppressWarnings=True)
 sock2 = U.UdpComms(udpIP="127.0.0.1", portTX=8000, portRX=8002, enableRX=True, suppressWarnings=True)
 sock3 = U.UdpComms(udpIP="127.0.0.1", portTX=8005, portRX=8003, enableRX=True, suppressWarnings=True)
-cam = cv2.VideoCapture('Samples/tracking.mp4')
+cam = cv2.VideoCapture('Samples/track22.mp4')
 i = 1
 lat = 50
 lon = 50
 alt = 40
 
-df = pd.read_csv('Samples/tracking.csv')
+df = pd.read_csv('Samples/track22.csv')
 
 
 cfg.merge_from_file('config.yaml')
@@ -54,7 +62,7 @@ model = load_pretrain(model, 'SiamAPNPlusModel.pth').eval().to(device)
 
 # build tracker
 
-trackers = []
+trackers = {}
 tracker_active = {}
 # tracker = ADSiamAPNTracker(model)
 
@@ -63,86 +71,57 @@ detector = ObjectDetector()
 track_di = {}
 track_avg = {}
 
-# import numpy as np
-# def quaternion_to_euler(w, x, y, z):
-#     ysqr = y * y
+import random
+import string
 
-#     t0 = +2.0 * (w * x + y * z)
-#     t1 = +1.0 - 2.0 * (x * x + ysqr)
-#     X = np.degrees(np.arctan2(t0, t1))
+def generate_uid(length=6):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
 
-#     t2 = +2.0 * (w * y - z * x)
-#     t2 = np.where(t2>+1.0,+1.0,t2)
-#     #t2 = +1.0 if t2 > +1.0 else t2
-
-#     t2 = np.where(t2<-1.0, -1.0, t2)
-#     #t2 = -1.0 if t2 < -1.0 else t2
-#     Y = np.degrees(np.arcsin(t2))
-
-#     t3 = +2.0 * (w * z + x * y)
-#     t4 = +1.0 - 2.0 * (ysqr + z * z)
-#     Z = np.degrees(np.arctan2(t3, t4))
-
-#     return X, Y, Z
-
-
-# def bbox_intersection(boxA, boxB):
-#     # Determine the coordinates of the intersection rectangle
-#     xA = max(boxA[0], boxB[0])
-#     yA = max(boxA[1], boxB[1])
-#     xB = min(boxA[2], boxB[2])
-#     yB = min(boxA[3], boxB[3])
-
-#     # Compute the area of intersection
-#     intersection_area = max(0, xB - xA + 1) * max(0, yB - yA + 1)
-
-#     # Compute the area of each bounding box
-#     boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-#     boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
-
-#     # Compute the IoU by taking the intersection area and dividing it
-#     # by the sum of the two areas minus the intersection area
-#     iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
-#     return iou
-
-# def bbox_to_string(trk,float_list):
-#     if trk == '':
-#         temp_li = []
-#         for li in float_list:
-#             int_list = [int(x) for x in li]
-#             st = '.'.join(map(str, int_list))
-#             # st = st+'u'
-#             temp_li.append(st)
-#         return 'n'.join(temp_li)
-#     else:
-#         traced_boxes = trk.split('n')
-
-#         temp_li = []
-#         for li in float_list:
-#             int_list = [int(x) for x in li]
-#             check = True
-#             for traced_b in traced_boxes:
-#                 traced_split = traced_b.split('.')
-#                 traced_box = [int(x) for x in traced_split]
-                
-#                 if bbox_intersection(li,traced_box)>0.3:
-#                     # print('overlapppppppppppp')
-#                     check = False
-#             if check:
-#                 st = '.'.join(map(str, int_list))
-#                 temp_li.append(st)
-#         return 'n'.join(temp_li)
 
 # start_time = time.time()
+last_time_called = time.time()
+
+def save_frame(uid,frame,st):
+    print(st)
+    x1,y1,x2,y2 = st.split('.')
+    print(x1,y1,x2,y2,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    cropped_img = frame[int(y1):int(y2), int(x1):int(x2)]
+    width = 64  
+    height = 128
+    if cropped_img is not None and cropped_img.size > 0:  
+        resized_img = cv2.resize(cropped_img, (width, height))
+        id = int(time.time())
+        cv2.imwrite('../AerialReId/PRAI/pytorch/gallery/00000/{}_{}.jpg'.format(uid,id), resized_img)
+
+def save_location(id, lat,lon):
+    print(id,lat,lon)
+    json_file_path = 'last_locations.json'
+    if os.path.isfile(json_file_path):
+        with open(json_file_path, 'r') as json_file:
+            address_dict = json.load(json_file)
+    else:
+        address_dict = {}
+
+    df = geopandas.tools.reverse_geocode(  
+        [Point(lon,lat)]
+    )
+    print(df)
+    addr = df['address'].iloc[0]
+    address_dict[id] = addr
+    
+    with open(json_file_path, 'w') as new_json_file:
+        new_json_file.write(json.dumps(address_dict, indent=4))
+     
 
 def track(frame):
-    if len(trackers) == 0:
+    global last_time_called
+    if len(trackers.keys()) == 0:
         return ''
     else:
         temp_li = []
-        for i in trackers:
-
-            outputs = i.track(frame)
+        for i in list(trackers.keys()):
+            outputs = trackers[i].track(frame)
             track_di[i].append(outputs['best_score'])
             # print(track_di[i],'....................')
             bbox = list(map(int, outputs['bbox']))
@@ -151,24 +130,68 @@ def track(frame):
                 bbox[3]=bbox[1]+bbox[3]
             st = '.'.join(map(str, bbox))
             temp_li.append(st)
+            print(st)
+            current_time = time.time()
+            if current_time - last_time_called >= 3:
+                 save_frame(i,frame,st)
+                 last_time_called = current_time
+
             if len(track_di[i]) == 1:
                 di = {}
                 di["point"] = "start"
                 di["box"] = st
                 sock3.SendData(json.dumps(di).encode('utf-8'))
-                # print(st,"Starting pointtttttttttttttttttttttt")
+                save_location(i,data['lat'],data['lon'])
+                print(st,"Starting pointtttttttttttttttttttttt")
             if len(track_di[i]) == 10:
                 track_di[i].popleft()
                 if sum(track_di[i])/10 <0.3:
                     # print("Siamesee low confidence")
-                    trackers.remove(i)
+                    # trackers.remove(i)
+                    del trackers[i]
                     tracker_active[i]=False
                     di = {}
                     di["point"] = "last"
                     di["box"] = st
                     sock3.SendData(json.dumps(di).encode('utf-8'))
-                    # print(st, "Last marked pointtttttttttttttttttttttt")
+                    print(st, "Last marked pointtttttttttttttttttttttt")
+                    # print(data['lat'],data['lon'])
+                    save_location(i,data['lat'],data['lon'])
+                    # extractFeatures()
         return 'n'.join(temp_li)
+
+def ReIdentification(img, bbox):
+     bbox = bbox.split('n')
+     for li in bbox:
+            if li != "":
+                lis = li.split('.')
+                x1,y1,x2,y2 = [int(x) for x in lis]
+                # print(x1,y1,x2,y2)
+                cropped_img = img[int(y1):int(y2), int(x1):int(x2)]
+                width = 64  
+                height = 128  
+                resized_img = cv2.resize(cropped_img, (width, height))
+                img_rgb = cv2.cvtColor(resized_img, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(img_rgb)
+                # id = int(time.time())
+                # name = "../cropped/test {}.jpg".format(id)
+                # pil_img.save(name)
+                similarity_score = check_match(pil_img)
+                print(similarity_score,":::::::::")
+                json_file_path = 'last_locations.json'
+                if os.path.isfile(json_file_path):
+                    with open(json_file_path, 'r') as json_file:
+                        address_dict = json.load(json_file)
+                else:
+                    address_dict = {}
+                for id in similarity_score:
+                    if similarity_score[id]>0.7:
+                        if id in address_dict:
+                            print(address_dict[id])
+
+
+     print("------------------")
+    #  print(bbox)
 
 
 def LocationCalculator(dat):
@@ -232,6 +255,7 @@ while True:
         bbox_data = res[0].boxes.xyxy.cpu().numpy().tolist()
         data['tracker'] = track(camImage)
         data['bbox_data'] = bbox_to_string(data['tracker'],bbox_data)
+        ReIdentification(camImage,data['bbox_data'])
         data['tracker_status'] = '.'.join(['1' if value else '0' for value in tracker_active.values()])
         
 
@@ -243,11 +267,12 @@ while True:
     dat = sock.ReadReceivedData() # read data
 
     if dat != None: # if NEW data has been received since last ReadReceivedData function call
-            print(type(dat)) # print new received data
-            print(dat)
+            # print(type(dat)) # print new received data
+            # print(dat)
             dat = "{"+dat+"}"
             dat = json.loads(dat)
             if dat["track"] == "":
+                res = LocationCalculator(dat)
                 sock2.SendData(res)
 
             else:
@@ -255,17 +280,18 @@ while True:
                 li = list(map(int,dat["track"].split('.')))
                 print(li)
                 temp_tracker = ADSiamAPNTracker(model)
-                trackers.append(temp_tracker)
-                tracker_active[temp_tracker] = True
-                track_di[temp_tracker] = deque(maxlen = 10)
-                trackers[-1].init(frame, (li[0],li[1], li[2]-li[0], li[3]-li[1]))
+                key = generate_uid()
+                trackers[key] = temp_tracker
+                tracker_active[key] = True
+                track_di[key] = deque(maxlen = 10)
+                trackers[key].init(frame, (li[0],li[1], li[2]-li[0], li[3]-li[1]))
                 
 
     dat2 = sock2.ReadReceivedData() # read data
     #implement timer function
     if dat2 != None: 
-            print(type(dat2),"oooooooooooooooooooooooooo") 
-            print(dat2)
+            # print(type(dat2),"oooooooooooooooooooooooooo") 
+            # print(dat2)
             dat2 = "{"+dat2+"}"
             dat2 = json.loads(dat2)
             res = LocationCalculator(dat2)

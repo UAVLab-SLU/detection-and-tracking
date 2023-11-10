@@ -30,7 +30,7 @@ class UdpComms():
         # Connect via UDP
         self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # internet protocol, udp (DGRAM) socket
         self.udpSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # allows the address/port to be reused immediately instead of it being stuck in the TIME_WAIT state waiting for late packets to arrive.
-        # self.udpSock.bind((udpIP, portRX))
+        self.udpSock.bind((udpIP, portRX))
 
         # Create Receiving thread if required
         if enableRX:
