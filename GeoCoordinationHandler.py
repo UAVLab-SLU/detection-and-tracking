@@ -124,6 +124,7 @@ class CameraRayProjection:
             self.latitude,self.longitude,self.altitude = self.LLA[0],self.LLA[1],self.LLA[2]
             self.image_width,self.image_height = image_res[0],image_res[1]
             self.xy_coors = self.raster_to_xy(target_coors,image_res)
+            # print(self.xy_coors)
             self.quaternion = quaternion
             
             #Constant Params
@@ -168,7 +169,6 @@ class CameraRayProjection:
         # rot = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
         # # rotd = np.dot(transformation_matrix_ENU, rot)
         # rotd = rot @ transformation_matrix_ENU 
-
         return transformation_matrix_ENU
     
 
@@ -184,6 +184,7 @@ class CameraRayProjection:
        
 
         Phi,Lambda = np.deg2rad(self.latitude), np.deg2rad(self.longitude)
+        # print(Phi,Lambda)
 
         m00 = -np.sin(Lambda)
         m01 = -np.cos(Lambda)*np.sin(Phi)
@@ -220,6 +221,7 @@ class CameraRayProjection:
         Vy = -np.cos(self.Beta)*np.sin(self.Alpha)
         Vz = np.sin(self.Beta)
         column_vector = np.array([[Vx], [Vy], [Vz]])
+        # print(column_vector)
         return column_vector
     
 
@@ -282,22 +284,26 @@ class CameraRayProjection:
 
         ECEF_drone = Vector(ECEF_drone[0],ECEF_drone[1],ECEF_drone[2])
         
-
         #drone origin ECEF is ray point 
         ray_point = np.array([ECEF_drone.x,ECEF_drone.y,ECEF_drone.z])
         #ray_direction is the direction vector to target in ECEF 
         ray_direction = np.array([target_ECEF.x,target_ECEF.y,target_ECEF.z])
+        
         # position of ground in ECEF
         ECEF_ground = self.LLAtoXYZ(self.latitude,self.longitude,0)
 
         plane_point = np.array([ECEF_ground[0],ECEF_ground[1],ECEF_ground[2]])
-        
         #for ground plane, "up" direction  
         plane_normal = np.array([(np.cos(Lambda)*np.cos(Phi)),(np.sin(Lambda)*np.cos(Phi)),np.sin(Phi)])
-
+        print(plane_point)
+        print(ray_point)
         denom = plane_normal.dot(ray_direction)
+        print(denom)
         dir_vector = ray_point - plane_point
+        print(dir_vector)
+        print(plane_normal.dot(dir_vector))
         alpha = (-plane_normal.dot(dir_vector))/denom
+        print(alpha*ray_direction)
         intersect = dir_vector + (alpha * ray_direction) + plane_point
         
         return Vector(intersect[0],intersect[1],intersect[2])
@@ -309,7 +315,7 @@ if __name__ == "__main__":
     #     Raster Coordinates of target pixel from bounding box (x,y) 
     #     Quaternion of camera position ENU.
 
-    c = CameraRayProjection(2,[41.714911, -86.242250,200],[1080,200],Coordinates(350,200),[0.06146124, 0, 0, 0.99810947])
+    c = CameraRayProjection(69,[38.63503, -90.23074,39.34502],[1920,1080],Coordinates(960,540),[-0.4571533203125, -0.52996826171875, 0.41888427734375, -0.578369140625])
     target_direction_ENU = c.target_ENU()
     target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
     intersect_ECEF = c.target_location(target_direction_ECEF)

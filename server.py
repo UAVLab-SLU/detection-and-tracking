@@ -3,6 +3,7 @@ import os
 import sys
 sys.path.append('../')
 sys.path.append('../AerialReId')
+sys.path.append('../GeoRegistration')
 
 import argparse
 import cv2
@@ -18,6 +19,11 @@ from quatToEuler import quaternion_to_euler
 from bbox_calculations import bbox_to_string
 from extract_features import extractFeatures
 from ReId import check_match
+from Drone import Drone
+from camera import Camera
+from GeoLocation import GeoLocation
+from SimpleTargetCalculator import SimpleTargetCalculator
+from Coordinates import Coordinates
 from PIL import Image
 
 torch.set_num_threads(1)
@@ -41,13 +47,13 @@ import geopandas
 sock = U.UdpComms(udpIP="127.0.0.1", portTX=8080, portRX=8081, enableRX=True, suppressWarnings=True)
 sock2 = U.UdpComms(udpIP="127.0.0.1", portTX=8000, portRX=8002, enableRX=True, suppressWarnings=True)
 sock3 = U.UdpComms(udpIP="127.0.0.1", portTX=8005, portRX=8003, enableRX=True, suppressWarnings=True)
-cam = cv2.VideoCapture('Samples/track22.mp4')
+cam = cv2.VideoCapture('Samples/east_1.mp4')
 i = 1
 lat = 50
 lon = 50
 alt = 40
 
-df = pd.read_csv('Samples/track22.csv')
+df = pd.read_csv('Samples/east_1.csv')
 
 
 cfg.merge_from_file('config.yaml')
@@ -195,24 +201,41 @@ def ReIdentification(img, bbox):
 
 
 def LocationCalculator(dat):
-    c = GC.CameraRayProjection(69,[float(dat["lat"]),float(dat["lon"]),float(dat["alt"])],
-                            [int(float(dat["resw"])),int(float(dat["resh"]))],
-                            GC.Coordinates(int(float(dat["xpos"])),int(float(dat["ypos"]))),
 
-                            [data['w'],data['x'],data['y'],data['z']])
+    drone = Drone()
+    drone.set_current_location(GeoLocation(float(dat["lat"]),float(dat["lon"]),float(dat["alt"])))
+    camera_FOVh = 69
+    camera_img_resolution = [int(float(dat["resw"])),int(float(dat["resh"]))]
+    target_xy_coors_in_image = Coordinates(int(float(dat["xpos"])),int(float(dat["ypos"])))
+    camera_quaternion = [data['w'],data['x'],data['y'],data['z']]
+    c = Camera(camera_FOVh,camera_img_resolution,camera_quaternion)
     
-    target_direction_ENU = c.target_ENU()
-    target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
-    intersect_ECEF = c.target_location(target_direction_ECEF)
+    simpleTargetCalulator = SimpleTargetCalculator(c, drone, target_xy_coors_in_image)
+
     
-    intersect_LLA = c.ECEFtoLLA(intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
-    print(c.LLAtoXYZ(intersect_LLA[0], intersect_LLA[1], intersect_LLA[2]))
-    print("CALCULATED LOCATION IS",intersect_LLA)
+
+    target_geo_location_simple_calculation = simpleTargetCalulator.calculate()
+    
+    lat,lon,alt =target_geo_location_simple_calculation.getGeoLocation()
+
+    # c = GC.CameraRayProjection(69,[float(dat["lat"]),float(dat["lon"]),float(dat["alt"])],
+    #                         [int(float(dat["resw"])),int(float(dat["resh"]))],
+    #                         GC.Coordinates(int(float(dat["xpos"])),int(float(dat["ypos"]))),
+
+    #                         [data['w'],data['x'],data['y'],data['z']])
+    
+    # target_direction_ENU = c.target_ENU()
+    # target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
+    # intersect_ECEF = c.target_location(target_direction_ECEF)
+    
+    # intersect_LLA = c.ECEFtoLLA(intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
+    # print(c.LLAtoXYZ(intersect_LLA[0], intersect_LLA[1], intersect_LLA[2]))
+    # print("CALCULATED LOCATION IS",intersect_LLA)
     
     di2 = {
-        'lat' : str(intersect_LLA[0]),
-        'lon' : str(intersect_LLA[1]),
-        'alt' : str(intersect_LLA[2]),
+        'lat' : str(lat),
+        'lon' : str(lon),
+        'alt' : str(alt),
         'obj' : str(dat["obj"]),
         'ctr' : str(dat["ctr"])
     }

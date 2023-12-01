@@ -22,11 +22,14 @@ import numpy as np
 
 import olympe
 from olympe.messages.ardrone3.Piloting import TakeOff, Landing
-from olympe.messages.ardrone3.Piloting import moveBy
-from olympe.messages.ardrone3.PilotingState import FlyingStateChanged, SpeedChanged
+from olympe.messages.ardrone3.Piloting import moveBy, CancelMoveTo, moveTo, NavigateHome
+from olympe.messages.ardrone3.PilotingEvent import moveByEnd
+from olympe.messages.ardrone3.PilotingState import FlyingStateChanged, SpeedChanged, moveByChanged, moveToChanged
 from olympe.messages.ardrone3.PilotingSettings import MaxTilt
 from olympe.messages.ardrone3.PilotingSettingsState import MaxTiltChanged
-from olympe.messages.ardrone3.GPSSettingsState import GPSFixStateChanged
+from olympe.enums.ardrone3.PilotingState import MoveToChanged_Status as status                                                               
+import olympe.enums.move as mode 
+from olympe.messages.ardrone3.GPSSettingsState import GPSFixStateChanged, HomeChanged
 from olympe.video.renderer import PdrawRenderer
 
 from olympe.messages.gimbal import (
@@ -127,10 +130,12 @@ class StreamingExample:
         global interrupt
         counter +=1
         # print(counter)
-        if counter == 500:
-            interrupt = True
-        if counter == 700:
-            interrupt = False
+        # if counter == 500:
+            # interrupt = True
+            # self.make_hover()
+        # if counter == 700:
+        #     interrupt = False
+
         # the VideoFrame.info() dictionary contains some useful information
         # such as the video resolution
         info = yuv_frame.info()
@@ -179,19 +184,38 @@ class StreamingExample:
             print(data)
             data = "{"+data+"}"
             data = json.loads(data)
-            c = GC.CameraRayProjection(69,[float(data["lat"]),float(data["lon"]),float(data["alt"])],[int(float(data["resw"])),int(float(data["resh"]))],GC.Coordinates(int(float(data["xpos"])),int(float(data["ypos"]))),[float(data["w"]),float(data["x"]), float(data["y"]), float(data["z"])])
-            target_direction_ENU = c.target_ENU()
-            target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
-            intersect_ECEF = c.target_location(target_direction_ECEF)
-            #print("Intersect ECEF", intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
-            intersect_LLA = c.ECEFtoLLA(intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
-            print(intersect_LLA)
-            di2 = {
-                'lat' : str(intersect_LLA[0]),
-                'lon' : str(intersect_LLA[1]),
-                'alt' : str(intersect_LLA[2])
-            }
-            sock2.SendData(json.dumps(di2).encode('utf-8'))
+            if "hover" in data.keys():
+                if data['hover'] == "True":
+                    interrupt = True
+                elif data['hover'] == "False":
+                    interrupt = False
+                    
+            else:
+                c = GC.CameraRayProjection(69,[float(data["lat"]),float(data["lon"]),float(data["alt"])],[int(float(data["resw"])),int(float(data["resh"]))],GC.Coordinates(int(float(data["xpos"])),int(float(data["ypos"]))),[float(data["w"]),float(data["x"]), float(data["y"]), float(data["z"])])
+                target_direction_ENU = c.target_ENU()
+                target_direction_ECEF = c.ENU_to_ECEF(target_direction_ENU)
+                intersect_ECEF = c.target_location(target_direction_ECEF)
+                #print("Intersect ECEF", intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
+                intersect_LLA = c.ECEFtoLLA(intersect_ECEF.x,intersect_ECEF.y,intersect_ECEF.z)
+                print(intersect_LLA)
+                di2 = {
+                    'lat' : str(intersect_LLA[0]),
+                    'lon' : str(intersect_LLA[1]),
+                    'alt' : str(intersect_LLA[2])
+                }
+                sock2.SendData(json.dumps(di2).encode('utf-8'))
+    def print_test(self):
+        print("Testinggggggggggggggggggggggggggggggggggggggggggggggg")
+
+    def make_hover(self):
+        print("makeeeeeeeeeeeeeeeeeeeeeeeeeee______hover")
+        self.drone(CancelMoveTo(_timeout = 100)).wait()
+        print(self.drone.get_state(moveToChanged))
+        self.print_test()
+        # # time.sleep(100)
+        # self.drone(moveByEnd(_timeout = 100)).wait()
+        # # self.drone(moveByChanged(_timeout = 100)).wait()
+        # print("Changed................",self.drone.get_state(moveByEnd))
             
     def check_hover(self):
         global interrupt
@@ -199,6 +223,18 @@ class StreamingExample:
         while interrupt:
             print("hoveringgggggggggg")
             time.sleep(1)
+
+    def returnHomeandLand(self):
+        print("-------------------------------------------------------------------------------")
+        print(self.drone.get_state(HomeChanged))
+        self.drone(                                                      
+            moveTo(self.drone.get_state(HomeChanged)['latitude'], self.drone.get_state(HomeChanged)['longitude'], 65.0, mode.orientation_mode.to_target, 0.0, _timeout = 100)                                      
+            >> moveToChanged(status=status.DONE, _timeout=100)
+            ).wait().success()
+        print(self.drone.get_state(moveToChanged))
+        print("Landing...")
+        self.drone(Landing() >> FlyingStateChanged(state="landed", _timeout=50)).wait()
+        print("Landed\n")
 
     def fly(self):
         global interrupt
@@ -219,37 +255,109 @@ class StreamingExample:
                 )
             )
         ).wait()
-        maxtilt = self.drone.get_state(MaxTiltChanged)["max"]
-        # maxtilt = 1.0
-        print(maxtilt)
-        print(self.drone.get_state(SpeedChanged))
-        self.drone(MaxTilt(maxtilt)).wait()
         
         self.drone( set_target( gimbal_id = 0,
                                   control_mode = "position",
                                   yaw_frame_of_reference = "relative",
                                   yaw = 0.0,
                                   pitch_frame_of_reference = "relative",
-                                  pitch = -70.0,
+                                  pitch = -50.0,
                                   roll_frame_of_reference = "relative",
                                   roll = 0.0
                                 ) ).wait()
         print("ddddddddddddddddddddddddddddddd")
-        self.drone(moveBy(0, 0, -25, 0, _timeout=10)).wait().success()
-        for i in range(30):
-            self.check_hover()
-            self.drone(moveBy(1, 0, 0, 0, _timeout=1)).wait().success()
-            print(i)
-            print("-----------------")
-        for i in range(30):
-            self.check_hover()
-            self.drone(moveBy(-1, 0, 0, 0, _timeout=1)).wait().success()
-            print(i)
-            print('=================')
+        print(self.drone.get_state(HomeChanged))
+        # self.drone(moveBy(0, 0, -65, 0, _timeout=100)).wait().success()
+        
+        # points = [
+            
+        #     [38.63496112075127, -90.22988829020554],
+        #     [38.63448710782678, -90.23004908799908],
+        #     [38.63464262029892, -90.23080522048069],
+        #     [38.63511513689434, -90.23063676564934],
+        # ]
+        # for i in points:
+        #     start_time = time.time()  # Start timing
+        #     print("====================================================")
+        #     self.drone(                                                      
+        #         moveTo(i[0], i[1], 65.0, mode.orientation_mode.to_target, 0.0,_timeout = 30)                                      
+        #         >> moveToChanged(status=status.DONE, _timeout=30)
+        #         ).wait().success()
+        #     print(self.drone.get_state(moveToChanged))
+            
+
+        #     end_time = time.time()  # End timing
+        #     duration = end_time - start_time  # Calculate duration
+
+        #     print(f"Time taken for iteration {i}: {duration} seconds")
+
+        # self.drone(                                                      
+        #     moveTo(38.63448831349425, -90.23005939015252, 45.0, mode.orientation_mode.to_target, 0.0)                                      
+        #     >> moveToChanged(status=status.DONE, _timeout=10)
+        #     ).wait().success()
+        # print(self.drone.get_state(moveToChanged))
+        # self.drone(                                                      
+        #     moveTo(38.6340093469394, -90.23021644652499, 45.0, mode.orientation_mode.to_target, 0.0)                                      
+        #     >> moveToChanged(status=status.DONE, _timeout=10)
+        #     ).wait().success()
+        
+        # print(self.drone.get_state(moveToChanged))
+        
         
 
+        
+        
+        self.drone(moveBy(0, 0, -35, 0, _timeout=100)).wait().success()
+        # self.drone(moveBy(20, 0, 0, 0, _timeout=100)).wait().success()
+        # self.drone(moveBy(0, 25, 0, 0, _timeout=100)).wait().success()
+        # self.drone(moveBy(-20, 0, 0, 0, _timeout=100)).wait().success()
+        # self.drone(moveBy(0, -25, 0, 0, _timeout=100)).wait().success()
+        self.drone( set_target( gimbal_id = 0,
+                                  control_mode = "position",
+                                  yaw_frame_of_reference = "relative",
+                                  yaw = 0.0,
+                                  pitch_frame_of_reference = "relative",
+                                  pitch = -80.0,
+                                  roll_frame_of_reference = "relative",
+                                  roll = 0.0
+                                ) ).wait()
+        time.sleep(5)
+        self.drone( set_target( gimbal_id = 0,
+                                  control_mode = "position",
+                                  yaw_frame_of_reference = "relative",
+                                  yaw = 0.0,
+                                  pitch_frame_of_reference = "relative",
+                                  pitch = -40.0,
+                                  roll_frame_of_reference = "relative",
+                                  roll = 0.0
+                                ) ).wait()
+        time.sleep(5)
+        self.drone( set_target( gimbal_id = 0,
+                                  control_mode = "position",
+                                  yaw_frame_of_reference = "relative",
+                                  yaw = 0.0,
+                                  pitch_frame_of_reference = "relative",
+                                  pitch = -20.0,
+                                  roll_frame_of_reference = "relative",
+                                  roll = 0.0
+                                ) ).wait()
+        self.drone(moveBy(0, 0, 35, 0, _timeout=10)).wait().success()
+        
+        # for i in range(30):
+        #     self.check_hover()
+        #     self.drone(moveBy(1, 0, 0, 0, _timeout=1)).wait().success()
+        #     print(i)
+        #     print("-----------------")
+        # for i in range(30):
+        #     self.check_hover()
+        #     self.drone(moveBy(-1, 0, 0, 0, _timeout=1)).wait().success()
+        #     print(i)
+        #     print('=================')
+        
 
-        self.drone(moveBy(0, 0, 25, 0, _timeout=10)).wait().success()
+        # self.returnHomeandLand()
+        # self.drone(moveBy(0, 0, 45, 0, _timeout=10)).wait().success()
+        # self.drone(NavigateHome(1, _timeout = 30)).wait().success()
         
 
         print("Landing...")
